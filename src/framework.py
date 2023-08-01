@@ -13,7 +13,7 @@ class Framework:
     def __init__(
         self,
         run_monitoring: bool,
-        resources: list[str],
+        resources_to_predict: list[str],
         monitoring_time_in_seconds: int,
         monitoring_interval_in_seconds: int,
         filename: str,
@@ -22,7 +22,7 @@ class Framework:
         run_in_real_time: bool,
     ):
         self.run_monitoring = run_monitoring
-        self.resources = resources
+        self.resources = resources_to_predict
         self.monitoring_time_in_seconds = monitoring_time_in_seconds
         self.monitoring_interval_in_seconds = monitoring_interval_in_seconds
         self.filename = filename
@@ -56,6 +56,7 @@ class Framework:
         self.forecasting = Forecasting(dataframe, self.model_name, self.resources)
         self.forecasting.train()
         self.__plot_graph()
+        # TODO: add rejuvenation
 
     def __run_real_time(self):
         ...
@@ -97,7 +98,10 @@ class FrameworkCLI:
             "--model",
             type=str,
             default="h_lstm",
-            choices=["ma", "h_lstm"],
+            choices=[
+                "ma",
+                "h_lstm",
+            ],  # TODO: Add support to more models (LSTM, ARIMA, ConvLSTM, etc.)
             help="Model for time series prediction",
         )
         self.parser.add_argument(
@@ -107,10 +111,13 @@ class FrameworkCLI:
             help="Run the monitoring process",
         )
         self.parser.add_argument(
-            "--resources",
+            "--resources-to-predict",
             type=list[str],
-            default=["Mem"],
-            help="List of resources to monitor",
+            default=["CPU", "Mem", "Disk"],
+            help=(
+                "List of resources to predict, all resources are monitored either way. "
+                "Available resources: CPU, Mem, Disk"
+            ),
         )
         self.parser.add_argument(
             "--monitoring-time-in-seconds",
@@ -127,7 +134,7 @@ class FrameworkCLI:
         self.parser.add_argument(
             "--filename",
             type=str,
-            default="/home/gabriel/Repositories/software-aging-framework/data/fake_monitoring.csv",
+            default="/home/gabriel/Repositories/software-aging-framework/data/real_monitoring.csv",
             help=(
                 "Path to save the monitoring data (only if --run-monitoring is True) or "
                 "path to read the monitoring data (only if --run-monitoring is False)"

@@ -6,21 +6,21 @@ from statsmodels.tsa.arima.model import ARIMA
 from src.models.model import Model
 
 
-class MovingAverage(Model):
+class MovingAverage(Model):  # TODO: add support for multivariate
     def __init__(self):
         self.model = None
         self.fitted_model = None
         self.train_sequence = None
         self.test_sequence = None
 
-    def train(self, train_sequence: pd.DataFrame, test_sequence: pd.DataFrame):
+    def train(self, train_sequence: pd.Series, test_sequence: pd.Series):
         self.train_sequence = train_sequence.values
         self.test_sequence = test_sequence.values
         self.model = ARIMA(train_sequence, order=(0, 0, 1))
         self.fitted_model = self.model.fit()
 
-    def predict(self, data):
-        return self.fitted_model.predict(start=0, end=len(data) - 1)
+    def predict(self, sequence: pd.Series):
+        return self.fitted_model.predict(start=0, end=len(sequence) - 1)
 
     def plot_results(self):
         sequence = np.concatenate([self.train_sequence, self.test_sequence], axis=0)

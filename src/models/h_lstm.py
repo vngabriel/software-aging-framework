@@ -2,14 +2,12 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from matplotlib import pyplot as plt
-from statsmodels.tsa.arima.model import ARIMA
-from tensorflow.keras.layers import ConvLSTM2D
-from tensorflow.keras.layers import Dense
-from tensorflow.keras.layers import Flatten
+from tensorflow.keras.layers import ConvLSTM2D, Flatten, Dense
 from tensorflow.keras.models import Sequential
 
 from src.models.model import Model
-from src.utils import split_sequence
+from src.models.moving_average import MovingAverage
+from src.utils import split_multivariate_sequences
 
 
 def create_conv_lstm(n_steps, n_features, n_seq, learning_rate, loss, metrics):
@@ -23,7 +21,7 @@ def create_conv_lstm(n_steps, n_features, n_seq, learning_rate, loss, metrics):
         )
     )
     model.add(Flatten())
-    model.add(Dense(1))
+    model.add(Dense(n_features))
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
         loss=loss,
@@ -34,11 +32,10 @@ def create_conv_lstm(n_steps, n_features, n_seq, learning_rate, loss, metrics):
 
 
 class HLSTM(Model):
-    def __init__(self, n_steps=4, n_features=1, n_seq=1):
+    def __init__(self, n_features: int, n_steps: int = 4, n_seq: int = 1):
         self.n_steps = n_steps
         self.n_features = n_features
         self.n_seq = n_seq
-        self.ma_model = None
         self.conv_lstm_model = None
         self.train_sequence = None
         self.test_sequence = None
@@ -47,62 +44,86 @@ class HLSTM(Model):
         self.x_test_sequence = None
         self.y_test_sequence = None
 
+    @staticmethod
+    def __ma_block(train_sequence: np.array, test_sequence: np.array) -> np.array:
+        ma_model = MovingAverage()
+        ma_model.train(
+            train_sequence, test_sequence
+        )  # it is trained only on train data, test data is not used
+        ma_predictions = ma_model.predict(train_sequence)
+
+        return ma_predictions
+
     def train(self, train_sequence: pd.DataFrame, test_sequence: pd.DataFrame):
-        self.train_sequence = train_sequence.values
-        self.test_sequence = test_sequence.values
+        self.train_sequence = train_sequence
+        self.test_sequence = test_sequence
+
         # MA block
-        self.ma_model = ARIMA(self.train_sequence, order=(0, 0, 1))
-        model_fit = self.ma_model.fit()
-        ma_predictions = model_fit.predict(start=0, end=len(self.train_sequence) - 1)
+        ma_predictions_by_resource = []
+        for resource in self.train_sequence.columns:
+            train_resource_sequence = self.train_sequence[resource]
+            test_resource_sequence = self.test_sequence[resource]
+            ma_predictions_by_resource.append(
+                self.__ma_block(train_resource_sequence, test_resource_sequence)
+            )
 
         # Data pre-processing to fit the Conv-LSTM model
-        self.x_train_sequence, self.y_train_sequence = split_sequence(
-            self.train_sequence.tolist(), self.n_steps
+        n_steps = self.n_steps
+
+        self.x_train_sequence, self.y_train_sequence = split_multivariate_sequences(
+            self.train_sequence.values, n_steps
         )
-        x_ma_predictions, y_ma_predictions = split_sequence(
-            ma_predictions.tolist(), self.n_steps
+        self.x_test_sequence, self.y_test_sequence = split_multivariate_sequences(
+            self.test_sequence.values, n_steps
         )
-        self.x_test_sequence, self.y_test_sequence = split_sequence(
-            self.test_sequence.tolist(), self.n_steps
+
+        all_ma_predictions = np.column_stack([*ma_predictions_by_resource])
+
+        conv_lstm_x_train, conv_lstm_y_train = split_multivariate_sequences(
+            all_ma_predictions, n_steps
         )
 
         self.x_train_sequence = self.x_train_sequence.astype(np.float32)
         self.y_train_sequence = self.y_train_sequence.astype(np.float32)
-        x_ma_predictions = x_ma_predictions.astype(np.float32)
-        y_ma_predictions = y_ma_predictions.astype(np.float32)
         self.x_test_sequence = self.x_test_sequence.astype(np.float32)
         self.y_test_sequence = self.y_test_sequence.astype(np.float32)
+        conv_lstm_x_train = conv_lstm_x_train.astype(np.float32)
+        conv_lstm_y_train = conv_lstm_y_train.astype(np.float32)
 
         self.n_seq = 2
-        self.n_steps = 2
+        n_steps = 2
 
         self.x_train_sequence = self.x_train_sequence.reshape(
             (
                 self.x_train_sequence.shape[0],
                 self.n_seq,
                 1,
-                self.n_steps,
+                n_steps,
                 self.n_features,
             )
-        )
-        x_ma_predictions = x_ma_predictions.reshape(
-            (x_ma_predictions.shape[0], self.n_seq, 1, self.n_steps, self.n_features)
         )
         self.x_test_sequence = self.x_test_sequence.reshape(
             (
                 self.x_test_sequence.shape[0],
                 self.n_seq,
                 1,
-                self.n_steps,
+                n_steps,
+                self.n_features,
+            )
+        )
+        conv_lstm_x_train = conv_lstm_x_train.reshape(
+            (
+                conv_lstm_x_train.shape[0],
+                self.n_seq,
+                1,
+                n_steps,
                 self.n_features,
             )
         )
 
-        x_ma_predictions, y_ma_predictions = x_ma_predictions[1:], y_ma_predictions[1:]
-
         # Conv-LSTM block
         self.conv_lstm_model = create_conv_lstm(
-            self.n_steps,
+            n_steps,
             self.n_features,
             self.n_seq,
             1e-3,
@@ -110,8 +131,8 @@ class HLSTM(Model):
             ["mape", "mse", "mae"],
         )
         self.conv_lstm_model.fit(
-            x_ma_predictions,
-            y_ma_predictions,
+            conv_lstm_x_train,
+            conv_lstm_y_train,
             validation_data=(self.x_test_sequence, self.y_test_sequence),
             epochs=100,
             verbose=1,
@@ -121,26 +142,41 @@ class HLSTM(Model):
         return self.conv_lstm_model.predict(sequence)
 
     def plot_results(self):
+        sequence = np.concatenate(
+            [self.train_sequence.values, self.test_sequence.values], axis=0
+        )
         pred_x_train = self.conv_lstm_model.predict(self.x_train_sequence)
         pred_x_test = self.conv_lstm_model.predict(self.x_test_sequence)
-        dif = len(
-            np.concatenate((self.y_train_sequence, self.y_test_sequence), axis=0)
-        ) - len(pred_x_test)
-        axis_x_test = [(i + dif) for i in range(len(pred_x_test))]
+        x_axis_train = np.arange(self.n_steps, len(self.train_sequence))
+        x_axis_test = np.arange(len(self.train_sequence), len(sequence) - self.n_steps)
 
-        sequence = np.concatenate([self.train_sequence, self.test_sequence], axis=0)
-        plt.plot(sequence[1:], label="Original Set", color="blue")
-        plt.plot(pred_x_train, label="Predicted Train Set", color="red", linestyle="-.")
-        plt.plot(
-            axis_x_test,
-            pred_x_test,
-            label="Predicted Test Set",
-            color="green",
-            linestyle="-.",
-        )
+        plt.figure(figsize=(10, 6))
+        for idx, resource in enumerate(self.train_sequence.columns):
+            plt.subplot(len(self.train_sequence.columns), 1, idx + 1)
+            plt.subplots_adjust(hspace=0.8)
+            plt.plot(
+                sequence[self.n_steps :, idx],
+                label=f"Original Set ({resource})",
+                color="blue",
+            )
+            plt.plot(
+                x_axis_train,
+                pred_x_train[:, idx],
+                label=f"Predicted Train Set ({resource})",
+                color="red",
+                linestyle="-.",
+            )
+            plt.plot(
+                x_axis_test,
+                pred_x_test[:, idx],
+                label=f"Predicted Test Set ({resource})",
+                color="green",
+                linestyle="-.",
+            )
 
-        plt.xlabel("Time (min)")
-        plt.ylabel("Memory Used")
-        plt.legend()
+            plt.legend(loc="upper left", fontsize="small")
+            plt.xlabel("Time")
+            plt.ylabel("Resource Usage")
+            plt.title(f"{resource} Usage and Prediction")
 
         plt.show()
