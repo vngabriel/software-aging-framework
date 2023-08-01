@@ -16,7 +16,6 @@ class Framework:
         resources: list[str],
         monitoring_time_in_seconds: int,
         monitoring_interval_in_seconds: int,
-        prediction_interval_in_seconds: int,
         filename: str,
         model: str,
         save_plot: bool,
@@ -26,13 +25,12 @@ class Framework:
         self.resources = resources
         self.monitoring_time_in_seconds = monitoring_time_in_seconds
         self.monitoring_interval_in_seconds = monitoring_interval_in_seconds
-        self.prediction_interval_in_seconds = prediction_interval_in_seconds
         self.filename = filename
         self.model_name = model
         self.save_plot = save_plot
         self.run_in_real_time = run_in_real_time
         self.forecasting = None
-        self.run_monitoring = None
+        self.monitor_process = None
         if self.run_monitoring:
             self.monitor_process = ResourceMonitorProcess(
                 self.monitoring_interval_in_seconds, self.filename
@@ -81,7 +79,7 @@ class Framework:
         print()
 
     def __plot_graph(self):
-        self.forecasting.model.plot_results(self.forecasting.sequence)
+        self.forecasting.model.plot_results()
 
         if self.save_plot:
             path_to_save = self.filename.replace(".csv", ".png")
@@ -98,7 +96,7 @@ if __name__ == "__main__":
         "--model",
         type=str,
         default="h_lstm",
-        choices=["h_lstm"],
+        choices=["ma", "h_lstm"],
         help="Model for time series prediction",
     )
     parser.add_argument(
@@ -126,15 +124,9 @@ if __name__ == "__main__":
         help="Interval between each monitoring in seconds (only if --run-monitoring is True)",
     )
     parser.add_argument(
-        "--prediction-interval-in-seconds",
-        type=int,
-        default=60,
-        help="Interval in seconds to predict the resource usage",
-    )
-    parser.add_argument(
         "--filename",
         type=str,
-        default="/home/gabriel/Repositories/software-aging-framework/real_monitoring.csv",
+        default="/home/gabriel/Repositories/software-aging-framework/fake_monitoring.csv",
         help=(
             "Path to save the monitoring data (only if --run-monitoring is True) or "
             "path to read the monitoring data (only if --run-monitoring is False)"

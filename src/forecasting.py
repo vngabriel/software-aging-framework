@@ -1,6 +1,6 @@
 import pandas as pd
 
-from src.models.h_lstm import HLSTM
+from src.models import HLSTM, MovingAverage, Model
 from src.utils import split_sets, normalize
 
 
@@ -15,8 +15,10 @@ class Forecasting:
 
         self.model = self.__get_model(model_name)
 
-    def __get_model(self, model_name: str) -> HLSTM:
+    def __get_model(self, model_name: str) -> Model:
         match model_name:
+            case "ma":
+                return MovingAverage()
             case "h_lstm":
                 return HLSTM(n_features=len(self.resources))
             case _:
