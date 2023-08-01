@@ -12,6 +12,8 @@ from src.monitor import ResourceMonitorProcess
 class Framework:
     def __init__(
         self,
+        run_monitoring: bool,
+        resources: list[str],
         monitoring_time_in_seconds: int,
         monitoring_interval_in_seconds: int,
         prediction_interval_in_seconds: int,
@@ -20,6 +22,8 @@ class Framework:
         save_plot: bool,
         run_in_real_time: bool,
     ):
+        self.run_monitoring = run_monitoring
+        self.resources = resources
         self.monitoring_time_in_seconds = monitoring_time_in_seconds
         self.monitoring_interval_in_seconds = monitoring_interval_in_seconds
         self.prediction_interval_in_seconds = prediction_interval_in_seconds
@@ -28,9 +32,11 @@ class Framework:
         self.save_plot = save_plot
         self.run_in_real_time = run_in_real_time
         self.forecasting = None
-        self.monitor_process = ResourceMonitorProcess(
-            self.monitoring_interval_in_seconds, self.filename
-        )
+        self.run_monitoring = None
+        if self.run_monitoring:
+            self.monitor_process = ResourceMonitorProcess(
+                self.monitoring_interval_in_seconds, self.filename
+            )
 
     def run(self):
         if self.run_in_real_time:
@@ -44,12 +50,12 @@ class Framework:
         self.__stop()
 
     def __run_experiment(self):
-        self.__run_monitoring()
+        if self.run_monitoring:
+            self.__run_monitoring()
 
         dataframe = pd.read_csv(self.filename)
-        dataframe["Timestamp"] = pd.to_datetime(dataframe["Timestamp"])
 
-        self.forecasting = Forecasting(dataframe, self.model_name)
+        self.forecasting = Forecasting(dataframe, self.model_name, self.resources)
         self.forecasting.train()
         self.__plot_graph()
 
@@ -75,21 +81,7 @@ class Framework:
         print()
 
     def __plot_graph(self):
-        plt.figure(figsize=(12, 6))
-
-        # Plot CPU Usage
-        plt.subplot(3, 1, 1)
-        self.__plot_experiment("CPU", self.forecasting.model_cpu)
-
-        # Plot Memory Usage
-        plt.subplot(3, 1, 2)
-        self.__plot_experiment("Mem", self.forecasting.model_mem)
-
-        # Plot Disk Usage
-        plt.subplot(3, 1, 3)
-        self.__plot_experiment("Disk", self.forecasting.model_disk)
-
-        plt.tight_layout()
+        self.forecasting.model.plot_results(self.forecasting.sequence)
 
         if self.save_plot:
             path_to_save = self.filename.replace(".csv", ".png")
@@ -97,66 +89,41 @@ class Framework:
 
         plt.show()
 
-    def __plot_experiment(self, resource: str, model):
-        x_train = self.forecasting.train_data["Timestamp"]
-        x_test = self.forecasting.test_data["Timestamp"]
-        training_end = x_train.iloc[-1]
-
-        plt.plot(
-            x_train,
-            self.forecasting.train_data[resource],
-            label=f"Train {resource} Usage",
-            color="g",
-        )
-        plt.plot(
-            x_test,
-            self.forecasting.test_data[resource],
-            label=f"Test {resource} Usage",
-            color="b",
-        )
-
-        plt.plot(
-            x_train,
-            model.predict(pd.to_numeric(x_train).values.reshape(-1, 1)),
-            label=f"Train {resource} Prediction",
-            color="r",
-        )
-        plt.plot(
-            x_test,
-            model.predict(pd.to_numeric(x_test).values.reshape(-1, 1)),
-            label=f"Test {resource} Prediction",
-            color="orange",
-        )
-        plt.axvline(training_end, color="gray", linestyle="--")
-
-        plt.legend(loc="upper left", fontsize="small")
-        plt.xlabel("Timestamp")
-        plt.ylabel("Usage (%)")
-        plt.title(f"{resource} Usage and Prediction")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Resource Monitoring and Prediction CLI"
+        description="Framework to monitoring and prevent software aging"
     )
     parser.add_argument(
         "--model",
         type=str,
-        default="linear_regression",
-        choices=["linear_regression"],
+        default="h_lstm",
+        choices=["h_lstm"],
         help="Model for time series prediction",
+    )
+    parser.add_argument(
+        "--run-monitoring",
+        type=bool,
+        default=False,
+        help="Run the monitoring process",
+    )
+    parser.add_argument(
+        "--resources",
+        type=list[str],
+        default=["Mem"],
+        help="List of resources to monitor",
     )
     parser.add_argument(
         "--monitoring-time-in-seconds",
         type=int,
         default=60,
-        help="Time in seconds to monitor the resource usage",
+        help="Time in seconds to monitor the resource usage (only if --run-monitoring is True)",
     )
     parser.add_argument(
         "--monitoring-interval-in-seconds",
         type=int,
         default=1,
-        help="Interval between each monitoring in seconds",
+        help="Interval between each monitoring in seconds (only if --run-monitoring is True)",
     )
     parser.add_argument(
         "--prediction-interval-in-seconds",
@@ -167,8 +134,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--filename",
         type=str,
-        default="/home/gabriel/Repositories/software-aging-framework/data.csv",
-        help="Path to save the monitoring data",
+        default="/home/gabriel/Repositories/software-aging-framework/real_monitoring.csv",
+        help=(
+            "Path to save the monitoring data (only if --run-monitoring is True) or "
+            "path to read the monitoring data (only if --run-monitoring is False)"
+        ),
     )
     parser.add_argument(
         "--save-plot",
@@ -180,7 +150,7 @@ if __name__ == "__main__":
         "--run-in-real-time",
         type=bool,
         default=False,
-        help="Run the monitoring and prediction in real time",
+        help="Run the monitoring and prediction in real time (only if --run-monitoring is True)",
     )
     args = parser.parse_args()
 

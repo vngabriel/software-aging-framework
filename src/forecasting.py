@@ -1,42 +1,29 @@
-import numpy as np
 import pandas as pd
-from sklearn.linear_model import LinearRegression
 
-Model = LinearRegression
+from src.models.h_lstm import HLSTM
+from src.utils import split_sets, normalize
 
 
 class Forecasting:
-    def __init__(self, data: pd.DataFrame, model_name: str):
-        self.model_cpu = self.__get_model(model_name)
-        self.model_mem = self.__get_model(model_name)
-        self.model_disk = self.__get_model(model_name)
+    def __init__(self, sequence: pd.DataFrame, model_name: str, resources: list[str]):
+        self.sequence = sequence
+        self.resources = resources
+        self.sequence = self.sequence[self.resources]
+        for resource in self.resources:
+            self.sequence[resource], _, _ = normalize(self.sequence[resource])
+        self.train_sequence, self.test_sequence = split_sets(self.sequence, 0.8)
 
-        self.train_data = data.iloc[: int(len(data) * 0.8)]
-        self.test_data = data.iloc[int(len(data) * 0.8) :]
+        self.model = self.__get_model(model_name)
 
-    @staticmethod
-    def __get_model(model_name: str) -> Model:
+    def __get_model(self, model_name: str) -> HLSTM:
         match model_name:
-            case "linear_regression":
-                return LinearRegression()
+            case "h_lstm":
+                return HLSTM(n_features=len(self.resources))
             case _:
                 raise ValueError("Model not found")
 
     def train(self):
-        x_train = pd.to_numeric(self.train_data["Timestamp"]).values.reshape(-1, 1)
-        y_train_cpu = self.train_data["CPU"].values
-        y_train_mem = self.train_data["Mem"].values
-        y_train_disk = self.train_data["Disk"].values
+        self.model.train(self.train_sequence, self.test_sequence)
 
-        self.model_cpu.fit(x_train, y_train_cpu)
-        self.model_mem.fit(x_train, y_train_mem)
-        self.model_disk.fit(x_train, y_train_disk)
-
-    def predict(self) -> tuple[np.array, np.array, np.array]:
-        x_test = pd.to_numeric(self.test_data["Timestamp"]).values.reshape(-1, 1)
-
-        cpu = self.model_cpu.predict(x_test)
-        mem = self.model_mem.predict(x_test)
-        disk = self.model_disk.predict(x_test)
-
-        return cpu, mem, disk
+    def predict(self):
+        return self.model.predict(self.test_sequence)

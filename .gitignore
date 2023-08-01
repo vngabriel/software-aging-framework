@@ -1,5 +1,5 @@
 .idea
 venv
-data.csv
-data.png
+*.csv
+*.png
 __pycache__
