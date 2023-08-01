@@ -126,7 +126,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--filename",
         type=str,
-        default="/home/gabriel/Repositories/software-aging-framework/fake_monitoring.csv",
+        default="/home/gabriel/Repositories/software-aging-framework/data/fake_monitoring.csv",
         help=(
             "Path to save the monitoring data (only if --run-monitoring is True) or "
             "path to read the monitoring data (only if --run-monitoring is False)"
