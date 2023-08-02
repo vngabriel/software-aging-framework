@@ -1,3 +1,5 @@
+import time
+
 import pandas as pd
 
 from src.models import HLSTM, MovingAverage, Model
@@ -25,7 +27,10 @@ class Forecasting:
                 raise ValueError("Model not found")
 
     def train(self):
+        start_time = time.time()
         self.model.train(self.train_sequence, self.test_sequence)
+        end_time = time.time()
+        print(f"\nTraining time: {end_time - start_time} seconds\n")
 
     def predict(self):
         return self.model.predict(self.test_sequence)
