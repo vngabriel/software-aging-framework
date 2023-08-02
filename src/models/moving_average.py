@@ -52,5 +52,3 @@ class MovingAverage(Model):  # TODO: add support for multivariate
         plt.xlabel("Time (min)")
         plt.ylabel("Memory Used")
         plt.legend()
-
-        plt.show()

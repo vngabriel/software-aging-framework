@@ -178,5 +178,3 @@ class HLSTM(Model):
             plt.xlabel("Time")
             plt.ylabel("Resource Usage")
             plt.title(f"{resource} Usage and Prediction")
-
-        plt.show()

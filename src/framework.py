@@ -106,8 +106,7 @@ class FrameworkCLI:
         )
         self.parser.add_argument(
             "--run-monitoring",
-            type=bool,
-            default=False,
+            action="store_true",
             help="Run the monitoring process",
         )
         self.parser.add_argument(
@@ -142,14 +141,12 @@ class FrameworkCLI:
         )
         self.parser.add_argument(
             "--save-plot",
-            type=bool,
-            default=False,
+            action="store_true",
             help="Save the plot as a png file",
         )
         self.parser.add_argument(
             "--run-in-real-time",
-            type=bool,
-            default=False,
+            action="store_true",
             help="Run the monitoring and prediction in real time (only if --run-monitoring is True)",
         )
         args = self.parser.parse_args()
