@@ -32,6 +32,8 @@ def create_conv_lstm(n_steps, n_features, n_seq, learning_rate, loss, metrics):
 
 
 class HLSTM(Model):
+    # Paper: https://www.mdpi.com/2076-3417/12/13/6412
+    # Code: https://github.com/arnaldovitor/hlstm-aging
     def __init__(self, n_features: int, n_steps: int = 4, n_seq: int = 1):
         self.n_steps = n_steps
         self.n_features = n_features
