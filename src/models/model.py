@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+import numpy as np
 import pandas as pd
 
 
@@ -13,7 +14,7 @@ class Model(ABC):
         pass
 
     @abstractmethod
-    def predict(self, sequence: pd.DataFrame | pd.Series) -> pd.DataFrame:
+    def predict(self, sequence: pd.DataFrame | pd.Series) -> np.ndarray:
         pass
 
     @abstractmethod

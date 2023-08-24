@@ -1,5 +1,6 @@
 import time
 
+import numpy as np
 import pandas as pd
 
 from src.models import HLSTM, MovingAverage, Model
@@ -11,8 +12,10 @@ class Forecasting:
         self.sequence = sequence
         self.resources = resources
         self.sequence = self.sequence[self.resources]
+        self.normalization_params = {}
         for resource in self.resources:
-            self.sequence[resource], _, _ = normalize(self.sequence[resource])
+            self.sequence[resource], s_min, s_max = normalize(self.sequence[resource])
+            self.normalization_params[resource] = (s_min, s_max)
         self.train_sequence, self.test_sequence = split_sets(self.sequence, 0.8)
 
         self.model = self.__get_model(model_name)
@@ -20,9 +23,12 @@ class Forecasting:
     def __get_model(self, model_name: str) -> Model:
         match model_name:
             case "ma":
-                return MovingAverage()
+                return MovingAverage(normalization_params=self.normalization_params)
             case "h_lstm":
-                return HLSTM(n_features=len(self.resources))
+                return HLSTM(
+                    n_features=len(self.resources),
+                    normalization_params=self.normalization_params,
+                )
             case _:
                 raise ValueError("Model not found")
 
@@ -32,5 +38,8 @@ class Forecasting:
         end_time = time.time()
         print(f"\nTraining time: {end_time - start_time} seconds\n")
 
-    def predict(self):
-        return self.model.predict(self.test_sequence)
+    def predict(self, sequence: np.ndarray) -> np.ndarray:
+        return self.model.predict(sequence)
+
+    def plot_results(self):
+        self.model.plot_results()

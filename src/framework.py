@@ -1,12 +1,13 @@
-import argparse
 import sys
 import time
 
 import pandas as pd
+import yaml
 from matplotlib import pyplot as plt
 
 from src.forecasting import Forecasting
 from src.monitor import ResourceMonitorProcess
+from src.utils import normalize, denormalize
 
 
 class Framework:
@@ -20,6 +21,10 @@ class Framework:
         model: str,
         save_plot: bool,
         run_in_real_time: bool,
+        process_name: str,
+        memory_threshold: float,
+        cpu_threshold: float,
+        disk_threshold: float,
     ):
         self.run_monitoring = run_monitoring
         self.resources = resources_to_predict
@@ -29,11 +34,15 @@ class Framework:
         self.model_name = model
         self.save_plot = save_plot
         self.run_in_real_time = run_in_real_time
-        self.forecasting = None
-        self.monitor_process = None
+        self.process_name = process_name
+        self.memory_threshold = memory_threshold
+        self.cpu_threshold = cpu_threshold
+        self.disk_threshold = disk_threshold
+        self.forecasting: Forecasting | None = None
+        self.monitor_process: ResourceMonitorProcess | None = None
         if self.run_monitoring:
             self.monitor_process = ResourceMonitorProcess(
-                self.monitoring_interval_in_seconds, self.filename
+                self.monitoring_interval_in_seconds, self.process_name, self.filename
             )
 
     def run(self):
@@ -45,7 +54,7 @@ class Framework:
     def __run_monitoring(self):
         self.monitor_process.start()
         self.__countdown()
-        self.__stop()
+        self.monitor_process.terminate()
 
     def __run_experiment(self):
         if self.run_monitoring:
@@ -56,12 +65,99 @@ class Framework:
         self.forecasting = Forecasting(dataframe, self.model_name, self.resources)
         self.forecasting.train()
         self.__plot_graph()
-        # TODO: add rejuvenation
 
     def __run_real_time(self):
-        ...
+        if self.run_monitoring:
+            self.monitor_process.start()
+            self.__countdown()
 
-    def __stop(self):
+        dataframe = pd.read_csv(self.filename)
+
+        self.forecasting = Forecasting(dataframe, self.model_name, self.resources)
+        self.forecasting.train()
+
+        plt.ion()  # turn on interactive mode for real-time plotting
+        plt.figure(figsize=(10, 6))
+
+        while True:
+            plt.clf()  # clear the current figure
+
+            # collect real-time monitoring data
+            current_data = pd.read_csv(self.filename)
+            current_data = current_data[self.resources]
+
+            n_steps = 2
+            n_seq = 2
+            normalization_params = {}
+
+            for resource in self.resources:
+                current_data[resource], s_min, s_max = normalize(current_data[resource])
+                normalization_params[resource] = (s_min, s_max)
+
+            # the last 4 rows of the current data are used for forecasting (n_steps = 4 or n_seq = 2 and n_steps = 2)
+            reshaped_current_data = current_data[-4:].values.reshape(
+                (1, n_seq, 1, n_steps, len(self.resources))
+            )
+
+            # perform forecasting using the trained model
+            predictions = self.forecasting.predict(reshaped_current_data)
+
+            flag_list = []
+            thresholds_by_resource = {
+                "Mem": self.memory_threshold,
+                "CPU": self.cpu_threshold,
+                "Disk": self.disk_threshold,
+            }
+
+            # compare predictions with thresholds and update flag_list and plot the results
+            for idx, resource in enumerate(self.resources):
+                s_min, s_max = normalization_params[resource]
+                denormalized_predictions = denormalize(
+                    predictions[:, idx], s_min, s_max
+                )
+
+                resource_value = denormalized_predictions[0]
+                if resource_value > thresholds_by_resource[resource]:
+                    flag_list.append(1)
+                else:
+                    flag_list.append(0)
+
+                s_min, s_max = normalization_params[resource]
+                denormalized_predictions = denormalize(
+                    predictions[:, idx], s_min, s_max
+                )
+
+                plt.subplot(len(self.resources), 1, idx + 1)
+                plt.subplots_adjust(hspace=0.8)
+
+                plt.plot(
+                    current_data.values[:, idx],
+                    label=f"Real-Time Data ({resource})",
+                    color="blue",
+                )
+                plt.plot(
+                    current_data.shape[0] + 1,
+                    denormalized_predictions[0],
+                    marker="o",
+                    color="red",
+                    label=f"Forecasted Value ({resource})",
+                )
+
+                plt.legend(loc="upper left", fontsize="small")
+                plt.xlabel("Time")
+                plt.ylabel("Resource Usage")
+                plt.title(f"Real-Time {resource} Usage and Forecasting")
+
+            # check if rejuvenation should be triggered
+            if flag_list.count(1) > 0:
+                print("\nActivated Rejuvenation\n")
+                print("Flag list:", flag_list)
+                # TODO: trigger rejuvenation
+
+            plt.draw()
+            plt.pause(0.01)
+
+        plt.ioff()
         self.monitor_process.terminate()
 
     def __print_progress_bar(self, current_second, text):
@@ -80,7 +176,7 @@ class Framework:
         print()
 
     def __plot_graph(self):
-        self.forecasting.model.plot_results()
+        self.forecasting.plot_results()
 
         if self.save_plot:
             path_to_save = self.filename.replace(".csv", ".png")
@@ -89,67 +185,10 @@ class Framework:
         plt.show()
 
 
-class FrameworkCLI:
+class FrameworkConfig:
     def __init__(self):
-        self.parser = argparse.ArgumentParser(
-            description="Framework to monitoring and prevent software aging"
-        )
-        self.parser.add_argument(
-            "--model",
-            type=str,
-            default="h_lstm",
-            choices=[
-                "ma",
-                "h_lstm",
-            ],  # TODO: Add support to more models (LSTM, ARIMA, ConvLSTM, etc.)
-            help="Model for time series prediction",
-        )
-        self.parser.add_argument(
-            "--run-monitoring",
-            action="store_true",
-            help="Run the monitoring process",
-        )
-        self.parser.add_argument(
-            "--resources-to-predict",
-            type=list[str],
-            default=["CPU", "Mem", "Disk"],
-            help=(
-                "List of resources to predict, all resources are monitored either way. "
-                "Available resources: CPU, Mem, Disk"
-            ),
-        )
-        self.parser.add_argument(
-            "--monitoring-time-in-seconds",
-            type=int,
-            default=60,
-            help="Time in seconds to monitor the resource usage (only if --run-monitoring is True)",
-        )
-        self.parser.add_argument(
-            "--monitoring-interval-in-seconds",
-            type=int,
-            default=1,
-            help="Interval between each monitoring in seconds (only if --run-monitoring is True)",
-        )
-        self.parser.add_argument(
-            "--filename",
-            type=str,
-            default="/home/gabriel/Repositories/software-aging-framework/data/real_monitoring.csv",
-            help=(
-                "Path to save the monitoring data (only if --run-monitoring is True) or "
-                "path to read the monitoring data (only if --run-monitoring is False)"
-            ),
-        )
-        self.parser.add_argument(
-            "--save-plot",
-            action="store_true",
-            help="Save the plot as a png file",
-        )
-        self.parser.add_argument(
-            "--run-in-real-time",
-            action="store_true",
-            help="Run the monitoring and prediction in real time (only if --run-monitoring is True)",
-        )
-        args = self.parser.parse_args()
+        with open("config.yaml", "r") as yml_file:
+            config = yaml.load(yml_file, Loader=yaml.FullLoader)
 
-        framework = Framework(**vars(args))
+        framework = Framework(**config["framework"])
         framework.run()

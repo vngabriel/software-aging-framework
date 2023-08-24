@@ -1,5 +1,5 @@
-from src.framework import FrameworkCLI
+from src.framework import FrameworkConfig
 
 
 if __name__ == "__main__":
-    FrameworkCLI()
+    FrameworkConfig()

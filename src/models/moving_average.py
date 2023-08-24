@@ -7,7 +7,8 @@ from src.models.model import Model
 
 
 class MovingAverage(Model):  # TODO: add support for multivariate
-    def __init__(self):
+    def __init__(self, normalization_params: dict[str, tuple[float, float]]):
+        self.normalization_params = normalization_params
         self.model = None
         self.fitted_model = None
         self.train_sequence = None
@@ -19,7 +20,7 @@ class MovingAverage(Model):  # TODO: add support for multivariate
         self.model = ARIMA(train_sequence, order=(0, 0, 1))
         self.fitted_model = self.model.fit()
 
-    def predict(self, sequence: pd.Series):
+    def predict(self, sequence: pd.Series) -> np.ndarray:
         return self.fitted_model.predict(start=0, end=len(sequence) - 1)
 
     def plot_results(self):

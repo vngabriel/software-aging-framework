@@ -1,0 +1,13 @@
+framework:
+    model: "h_lstm"
+    run_monitoring: True
+    resources_to_predict: ["CPU", "Mem", "Disk"]
+    monitoring_time_in_seconds: 180
+    monitoring_interval_in_seconds: 1
+    filename: "/home/gabriel/Repositories/software-aging-framework/data/fake_monitoring.csv"
+    save_plot: True
+    run_in_real_time: True
+    process_name: "chrome"
+    memory_threshold: 50
+    cpu_threshold: 50
+    disk_threshold: 95

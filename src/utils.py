@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 
-def normalize(sequence: pd.DataFrame) -> tuple[pd.DataFrame, float, float]:
+def normalize(sequence: pd.DataFrame | np.ndarray) -> tuple[pd.DataFrame, float, float]:
     # Normalize data
     s_min = min(sequence)
     s_max = max(sequence)
@@ -10,6 +10,14 @@ def normalize(sequence: pd.DataFrame) -> tuple[pd.DataFrame, float, float]:
     sequence = sequence.replace(np.nan, 0)
 
     return sequence, s_min, s_max
+
+
+def denormalize(
+    sequence: pd.DataFrame | np.ndarray, s_min: float, s_max: float
+) -> pd.DataFrame:
+    sequence = sequence * (s_max - s_min) + s_min
+
+    return sequence
 
 
 def split_sets(
