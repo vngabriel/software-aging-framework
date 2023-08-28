@@ -25,7 +25,9 @@ class ResourceMonitor:
             mem_info = self.process.memory_info()
             mem_usage = mem_info.rss / (1024**1)  # Memory usage in KB
             # TODO: monitor the process disk usage
-            disk_usage = psutil.disk_usage("/").used / (1024 * 1)  # Disk usage in in KB
+            disk_usage = psutil.disk_usage("/").used / (
+                1024**1
+            )  # Disk usage in in KB
 
             timestamp = datetime.now()
             data = (timestamp, cpu_percent, mem_usage, disk_usage)
