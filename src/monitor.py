@@ -1,6 +1,6 @@
 import time
 from datetime import datetime
-from multiprocessing import Process
+from multiprocessing import Process, Queue
 
 import pandas as pd
 import psutil
@@ -14,20 +14,21 @@ class ResourceMonitor:
         self.interval_in_seconds = interval_in_seconds
         self.filename = filename
         self.process_name = process_name
+        self.process = None
+
+    def monitor(self):
         self.process = self.__get_process()
         self.__create_file()
 
-    def monitor(self):
         while True:
             cpu_percent = self.process.cpu_percent()
             mem_info = self.process.memory_info()
-            mem_percent = (mem_info.rss / psutil.virtual_memory().total) * 100
-            disk_percent = psutil.disk_usage(
-                "/"
-            ).percent  # TODO: monitor the process disk usage
+            mem_usage = mem_info.rss / (1024**1)  # Memory usage in KB
+            # TODO: monitor the process disk usage
+            disk_usage = psutil.disk_usage("/").used / (1024 * 1)  # Disk usage in in KB
 
             timestamp = datetime.now()
-            data = (timestamp, cpu_percent, mem_percent, disk_percent)
+            data = (timestamp, cpu_percent, mem_usage, disk_usage)
 
             dataframe = pd.DataFrame(
                 [data], columns=["Timestamp", "CPU", "Mem", "Disk"]
@@ -48,11 +49,18 @@ class ResourceMonitor:
 
 
 class ResourceMonitorProcess(Process):
-    def __init__(self, interval_in_seconds: int, process_name: str, filename: str):
+    def __init__(
+        self, interval_in_seconds: int, process_name: str, filename: str, queue: Queue
+    ):
         super(ResourceMonitorProcess, self).__init__()
         self.resource_monitor = ResourceMonitor(
             interval_in_seconds, process_name, filename
         )
+        self.queue = queue
 
     def run(self):
-        self.resource_monitor.monitor()
+        try:
+            self.resource_monitor.monitor()
+        except Exception as e:
+            self.queue.put(str(e))
+            raise e

@@ -1,7 +1,10 @@
+import subprocess
 import sys
 import time
+from multiprocessing import Queue
 
 import pandas as pd
+import psutil
 import yaml
 from matplotlib import pyplot as plt
 
@@ -17,33 +20,68 @@ class Framework:
         resources_to_predict: list[str],
         monitoring_time_in_seconds: int,
         monitoring_interval_in_seconds: int,
-        filename: str,
+        directory_path: str,
         model: str,
+        path_to_load_weights: str | None,
+        path_to_save_weights: str | None,
         save_plot: bool,
         run_in_real_time: bool,
         process_name: str,
         memory_threshold: float,
         cpu_threshold: float,
         disk_threshold: float,
+        number_of_predictions: int,
+        start_command: str,
+        restart_command: str | None,
     ):
         self.run_monitoring = run_monitoring
         self.resources = resources_to_predict
         self.monitoring_time_in_seconds = monitoring_time_in_seconds
         self.monitoring_interval_in_seconds = monitoring_interval_in_seconds
-        self.filename = filename
+        self.directory_path = directory_path
         self.model_name = model
+        self.path_to_load_weights = path_to_load_weights
+        self.path_to_save_weights = path_to_save_weights
         self.save_plot = save_plot
         self.run_in_real_time = run_in_real_time
         self.process_name = process_name
-        self.memory_threshold = memory_threshold
-        self.cpu_threshold = cpu_threshold
-        self.disk_threshold = disk_threshold
+        self.thresholds_by_resource = {
+            "Mem": memory_threshold,
+            "CPU": cpu_threshold,
+            "Disk": disk_threshold,
+        }
+        self.number_of_predictions = number_of_predictions
+        self.start_command = start_command
+        self.restart_command = restart_command
         self.forecasting: Forecasting | None = None
         self.monitor_process: ResourceMonitorProcess | None = None
-        if self.run_monitoring:
-            self.monitor_process = ResourceMonitorProcess(
-                self.monitoring_interval_in_seconds, self.process_name, self.filename
+        self.error_queue = Queue()
+
+        if self.run_in_real_time or self.run_monitoring:
+            self.path_to_save_weights = self.__create_weights_filename(
+                self.path_to_save_weights
             )
+            self.filename = self.__create_filename(self.directory_path)
+            self.monitor_process = ResourceMonitorProcess(
+                self.monitoring_interval_in_seconds,
+                self.process_name,
+                self.filename,
+                self.error_queue,
+            )
+        else:
+            self.filename = self.directory_path
+
+    @staticmethod
+    def __create_filename(directory_path: str) -> str:
+        current_time = time.strftime("%Y-%m-%d_%H:%M:%S")
+        return f"{directory_path}/log_{current_time}.csv"
+
+    @staticmethod
+    def __create_weights_filename(directory_path: str | None) -> str | None:
+        if directory_path:
+            current_time = time.strftime("%Y-%m-%d_%H:%M:%S")
+            return f"{directory_path}/log_{current_time}/log_{current_time}"
+        return None
 
     def run(self):
         if self.run_in_real_time:
@@ -51,40 +89,81 @@ class Framework:
         else:
             self.__run_experiment()
 
-    def __run_monitoring(self):
-        self.monitor_process.start()
-        self.__countdown()
-        self.monitor_process.terminate()
-
     def __run_experiment(self):
         if self.run_monitoring:
-            self.__run_monitoring()
+            self.monitor_process.start()
+
+            time.sleep(1)
+            if self.error_queue.qsize() > 0:
+                print("\nError monitoring process\n")
+                return
+
+            self.__countdown()
+            self.monitor_process.terminate()
 
         dataframe = pd.read_csv(self.filename)
 
-        self.forecasting = Forecasting(dataframe, self.model_name, self.resources)
+        self.forecasting = Forecasting(
+            dataframe, self.model_name, self.resources, self.path_to_save_weights
+        )
         self.forecasting.train()
         self.__plot_graph()
 
     def __run_real_time(self):
+        self.monitor_process.start()
+        time.sleep(1)
+
         if self.run_monitoring:
-            self.monitor_process.start()
+            if self.error_queue.qsize() > 0:
+                print("\nError monitoring process\n")
+                return
+
             self.__countdown()
 
-        dataframe = pd.read_csv(self.filename)
+            dataframe = pd.read_csv(self.filename)
 
-        self.forecasting = Forecasting(dataframe, self.model_name, self.resources)
-        self.forecasting.train()
+            if dataframe.shape[0] < 4:
+                print(
+                    "\nNot enough monitoring data for forecasting, monitor for longer time\n"
+                )
+                return
+
+            self.forecasting = Forecasting(
+                dataframe, self.model_name, self.resources, self.path_to_save_weights
+            )
+            self.forecasting.train()
+
+        elif self.path_to_load_weights:
+            dataframe = pd.read_csv(self.filename)
+            self.forecasting = Forecasting(
+                dataframe,
+                self.model_name,
+                self.resources,
+                self.path_to_save_weights,
+                False,
+                self.path_to_load_weights,
+            )
+        else:
+            print(
+                "\nUnable to run if monitoring has not been run or model path has not been passed\n"
+            )
+            self.monitor_process.terminate()
+            return
 
         plt.ion()  # turn on interactive mode for real-time plotting
         plt.figure(figsize=(10, 6))
 
-        while True:
+        running = True
+        while running:
             plt.clf()  # clear the current figure
 
             # collect real-time monitoring data
             current_data = pd.read_csv(self.filename)
             current_data = current_data[self.resources]
+
+            # check if the current data has enough rows for forecasting
+            if current_data.shape[0] < 4:
+                continue
 
             n_steps = 2
             n_seq = 2
@@ -100,14 +179,13 @@ class Framework:
             )
 
             # perform forecasting using the trained model
-            predictions = self.forecasting.predict(reshaped_current_data)
+            predictions = self.forecasting.predict_future(
+                reshaped_current_data, self.number_of_predictions
+            )
+            # TODO: save predictions
+            # TODO: save plot over time
 
             flag_list = []
-            thresholds_by_resource = {
-                "Mem": self.memory_threshold,
-                "CPU": self.cpu_threshold,
-                "Disk": self.disk_threshold,
-            }
 
             # compare predictions with thresholds and update flag_list and plot the results
             for idx, resource in enumerate(self.resources):
@@ -116,32 +194,26 @@ class Framework:
                     predictions[:, idx], s_min, s_max
                 )
 
-                resource_value = denormalized_predictions[0]
-                if resource_value > thresholds_by_resource[resource]:
-                    flag_list.append(1)
-                else:
-                    flag_list.append(0)
-
-                s_min, s_max = normalization_params[resource]
-                denormalized_predictions = denormalize(
-                    predictions[:, idx], s_min, s_max
-                )
-
                 plt.subplot(len(self.resources), 1, idx + 1)
                 plt.subplots_adjust(hspace=0.8)
-
                 plt.plot(
                     current_data.values[:, idx],
                     label=f"Real-Time Data ({resource})",
                     color="blue",
                 )
-                plt.plot(
-                    current_data.shape[0] + 1,
-                    denormalized_predictions[0],
-                    marker="o",
-                    color="red",
-                    label=f"Forecasted Value ({resource})",
-                )
+                for i, pred_value in enumerate(denormalized_predictions):
+                    if pred_value > self.thresholds_by_resource[resource]:
+                        flag_list.append(1)
+                    else:
+                        flag_list.append(0)
+
+                    plt.plot(
+                        current_data.shape[0] + i,
+                        pred_value,
+                        marker="o",
+                        color="red",
+                        label=f"Forecasted Value ({resource})",
+                    )
 
                 plt.legend(loc="upper left", fontsize="small")
                 plt.xlabel("Time")
@@ -152,12 +224,33 @@ class Framework:
             if flag_list.count(1) > 0:
                 print("\nActivated Rejuvenation\n")
                 print("Flag list:", flag_list)
-                # TODO: trigger rejuvenation
+
+                for process in psutil.process_iter(attrs=["pid", "name"]):
+                    if self.process_name.lower() in process.info["name"].lower():
+                        self.__restart_process(
+                            process, self.start_command, self.restart_command
+                        )
+                        running = False
+                        break
 
             plt.draw()
             plt.pause(0.01)
 
         plt.ioff()
+        self.monitor_process.terminate()
+
+    def __restart_process(
+        self, process: psutil.Process, start_command: str, restart_command: str | None
+    ):
+        if restart_command is not None:
+            subprocess.Popen(restart_command, shell=True)
+        else:
+            process.terminate()  # Terminate the process
+            process.wait()  # Wait for the process to exit
+
+        # Start the process again
+        subprocess.Popen(start_command, shell=True)
+
         self.monitor_process.terminate()
 
     def __print_progress_bar(self, current_second, text):
@@ -182,13 +275,13 @@ class Framework:
             path_to_save = self.filename.replace(".csv", ".png")
             plt.savefig(path_to_save, dpi=300)
 
-        plt.show()
-
 
 class FrameworkConfig:
     def __init__(self):
         with open("config.yaml", "r") as yml_file:
             config = yaml.load(yml_file, Loader=yaml.FullLoader)
 
-        framework = Framework(**config["framework"])
+        framework = Framework(
+            **config["general"], **config["monitoring"], **config["real_time"]
+        )
         framework.run()

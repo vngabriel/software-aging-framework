@@ -17,12 +17,14 @@ class HLSTM(Model):
         self,
         normalization_params: dict[str, tuple[float, float]],
         n_features: int,
+        path_to_save_weights: str | None,
         n_steps: int = 4,
         n_seq: int = 1,
     ):
         self.normalization_params = normalization_params
-        self.n_steps = n_steps
         self.n_features = n_features
+        self.path_to_save_weights = path_to_save_weights
+        self.n_steps = n_steps
         self.n_seq = n_seq
         self.conv_lstm_model = None
         self.train_sequence = None
@@ -33,7 +35,15 @@ class HLSTM(Model):
         self.y_test_sequence = None
 
     @staticmethod
-    def create_conv_lstm(n_steps, n_features, n_seq, learning_rate, loss, metrics):
+    def create_conv_lstm(
+        n_steps: int,
+        n_features: int,
+        n_seq: int,
+        learning_rate: float,
+        loss: str,
+        metrics: list[str],
+        path_to_load_weights: str | None,
+    ):
         model = Sequential(name="conv_lstm")
         model.add(
             ConvLSTM2D(
@@ -50,6 +60,15 @@ class HLSTM(Model):
             loss=loss,
             metrics=metrics,
         )
+
+        if path_to_load_weights is not None:
+            try:
+                model.load_weights(path_to_load_weights)
+                print(f"\nLoaded model weights from {path_to_load_weights}\n")
+            except Exception as e:
+                print(
+                    f"\nError loading model weights from {path_to_load_weights}: {e}\n"
+                )
 
         return model
 
@@ -138,7 +157,8 @@ class HLSTM(Model):
             self.n_seq,
             1e-3,
             "mse",
-            ["mape", "mse", "mae"],
+            ["mse", "mae"],
+            None,
         )
         self.conv_lstm_model.fit(
             conv_lstm_x_train,
@@ -147,9 +167,26 @@ class HLSTM(Model):
             epochs=100,
             verbose=1,
         )
+        if self.path_to_save_weights is not None:
+            self.conv_lstm_model.save_weights(self.path_to_save_weights)
+            print(f"\nModel saved at: {self.path_to_save_weights}\n")
 
     def predict(self, sequence: pd.DataFrame):
         return self.conv_lstm_model.predict(sequence)
+
+    def load(self, path_to_load_weights: str):
+        self.n_seq = 2
+        n_steps = 2
+
+        self.conv_lstm_model = self.create_conv_lstm(
+            n_steps,
+            self.n_features,
+            self.n_seq,
+            1e-3,
+            "mse",
+            ["mse", "mae"],
+            path_to_load_weights,
+        )
 
     def plot_results(self):
         sequence = np.concatenate(

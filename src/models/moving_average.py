@@ -6,7 +6,7 @@ from statsmodels.tsa.arima.model import ARIMA
 from src.models.model import Model
 
 
-class MovingAverage(Model):  # TODO: add support for multivariate
+class MovingAverage(Model):
     def __init__(self, normalization_params: dict[str, tuple[float, float]]):
         self.normalization_params = normalization_params
         self.model = None
