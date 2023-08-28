@@ -2,22 +2,22 @@ general:  # General configurations
     model: "h_lstm"
     # if run_monitoring and run_in_real_time are False, must provide a path to model weights (can be null)
     # if the path_to_load_weights is passed, the path_to_save_weights will be ignored
-    path_to_save_weights: "/home/gabriel/Repositories/software-aging-framework/data/real_monitoring/real_monitoring"
+    path_to_save_weights: null
     resources_to_predict: ["CPU", "Mem", "Disk"]
     # if run_monitoring and run_in_real_time are False, must provide a path to a csv file
-    directory_path: "/home/gabriel/Repositories/software-aging-framework/data/real_monitoring.csv"
+    directory_path: "/home/gabriel/Repositories/software-aging-framework/data"
     run_monitoring: False
-    run_in_real_time: False
+    run_in_real_time: True
     save_plot: True  # Only used if run_in_real_time is False
 
 monitoring:  # Only used if run_monitoring is True or run_in_real_time is True
-    monitoring_time_in_seconds: 30
+    monitoring_time_in_seconds: 180  # Only used if run_monitoring is True
     monitoring_interval_in_seconds: 1
     process_name: "code"
 
 real_time:  # Only used if run_in_real_time is True
     # if run_monitoring is True then the model_path will not be considered and a new model will be trained (can be null)
-    path_to_load_weights: "/home/gabriel/Repositories/software-aging-framework/data/log_2023-08-27_20:58:03/log_2023-08-27_20:58:03"
+    path_to_load_weights: "/home/gabriel/Repositories/software-aging-framework/data/real_monitoring/real_monitoring"
     memory_threshold: 50  # in KB
     cpu_threshold: 50  # in percentage
     disk_threshold: 95  # in KB

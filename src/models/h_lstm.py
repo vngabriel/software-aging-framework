@@ -63,7 +63,7 @@ class HLSTM(Model):
 
         if path_to_load_weights is not None:
             try:
-                model.load_weights(path_to_load_weights)
+                model.load_weights(path_to_load_weights).expect_partial()
                 print(f"\nLoaded model weights from {path_to_load_weights}\n")
             except Exception as e:
                 print(

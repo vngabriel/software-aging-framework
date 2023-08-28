@@ -150,12 +150,16 @@ class Framework:
             self.monitor_process.terminate()
             return
 
-        plt.ion()  # turn on interactive mode for real-time plotting
-        plt.figure(figsize=(10, 6))
-
+        # dictionary to store predictions over time (all predictions of number_of_predictions)
+        predictions_over_time = {
+            f"{resource}_n{i + 1}": []
+            for resource in self.resources
+            for i in range(self.number_of_predictions)
+        }
         running = True
+
         while running:
-            plt.clf()  # clear the current figure
+            time.sleep(self.monitoring_interval_in_seconds)
 
             # collect real-time monitoring data
             current_data = pd.read_csv(self.filename)
@@ -182,8 +186,6 @@ class Framework:
             predictions = self.forecasting.predict_future(
                 reshaped_current_data, self.number_of_predictions
             )
-            # TODO: save predictions
-            # TODO: save plot over time
 
             flag_list = []
 
@@ -194,31 +196,13 @@ class Framework:
                     predictions[:, idx], s_min, s_max
                 )
 
-                plt.subplot(len(self.resources), 1, idx + 1)
-                plt.subplots_adjust(hspace=0.8)
-                plt.plot(
-                    current_data.values[:, idx],
-                    label=f"Real-Time Data ({resource})",
-                    color="blue",
-                )
                 for i, pred_value in enumerate(denormalized_predictions):
+                    predictions_over_time[f"{resource}_n{i + 1}"].append(pred_value)
+
                     if pred_value > self.thresholds_by_resource[resource]:
                         flag_list.append(1)
                     else:
                         flag_list.append(0)
-
-                    plt.plot(
-                        current_data.shape[0] + i,
-                        pred_value,
-                        marker="o",
-                        color="red",
-                        label=f"Forecasted Value ({resource})",
-                    )
-
-                plt.legend(loc="upper left", fontsize="small")
-                plt.xlabel("Time")
-                plt.ylabel("Resource Usage")
-                plt.title(f"Real-Time {resource} Usage and Forecasting")
 
             # check if rejuvenation should be triggered
             if flag_list.count(1) > 0:
@@ -233,11 +217,13 @@ class Framework:
                         running = False
                         break
 
-            plt.draw()
-            plt.pause(0.01)
-
-        plt.ioff()
         self.monitor_process.terminate()
+
+        # save the predictions over time in a csv file
+        predictions_over_time_df = pd.DataFrame(predictions_over_time)
+        predictions_over_time_df.to_csv(
+            self.filename.replace(".csv", "_predictions.csv"), index=False
+        )
 
     def __restart_process(
         self, process: psutil.Process, start_command: str, restart_command: str | None
