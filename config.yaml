@@ -3,11 +3,11 @@ general:  # General configurations
     # if run_monitoring and run_in_real_time are False, must provide a path to model weights (can be null)
     # if the path_to_load_weights is passed, the path_to_save_weights will be ignored
     path_to_save_weights: null
-    resources_to_predict: ["CPU", "Mem", "Disk"]
+    resources_to_predict: ["CPU", "Mem"]
     # if run_monitoring and run_in_real_time are False, must provide a path to a csv file
-    directory_path: "/home/gabriel/Repositories/software-aging-framework/data"
+    directory_path: "/home/gabrielvn/Faculdade/projetos/software-aging-framework/data/log_2023-09-12_18-07-45.csv"
     run_monitoring: False
-    run_in_real_time: True
+    run_in_real_time: False
     save_plot: True  # Only used if run_in_real_time is False
 
 monitoring:  # Only used if run_monitoring is True or run_in_real_time is True
